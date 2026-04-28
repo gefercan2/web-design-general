@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Platform Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #87CEEB;
+            font-family: Arial, monospace;
+            overflow: hidden;
+        }
+
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: black;
+            font-size: 18px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+        }
+
+        #player {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background: blue;
+            border: 2px solid black;
+        }
+
+        #player.idle { background: blue; }
+        #player.walking { background: lightblue; }
+        #player.running { background: cyan; }
+        #player.jumping { background: yellow; }
+
+        .terrain {
+            position: absolute;
+            background: brown;
+            border: 2px solid black;
+        }
+
+        .enemy-type1 {
+            position: absolute;
+            width: 35px;
+            height: 35px;
+            background: red;
+            border: 2px solid black;
+        }
+
+        .enemy-type2 {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background: purple;
+            border: 2px solid black;
+        }
+
+        .vitamin {
+            position: absolute;
+            width: 25px;
+            height: 25px;
+            background: gold;
+            border: 2px solid black;
+        }
+
+        .exit {
+            position: absolute;
+            width: 60px;
+            height: 80px;
+            background: green;
+            border: 2px solid black;
+        }
+
+        #message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 30px;
+            border: 3px solid black;
+            display: none;
+            font-size: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="hud">
+            <div>Lives: <span id="lifeCount">3</span></div>
+            <div>Vitamins Collected: <span id="vitaminCount">0</span></div>
+            <div>State: <span id="playerState">idle</span></div>
+        </div>
+
+        <div id="player"></div>
+
+        <!-- Ground -->
+        <div class="terrain" style="left: 0; top: 550px; width: 100%; height: 50px;"></div>
+        
+        <!-- Platforms -->
+        <div class="terrain" style="left: 200px; top: 400px; width: 150px; height: 20px;"></div>
+        <div class="terrain" style="left: 450px; top: 300px; width: 150px; height: 20px;"></div>
+        <div class="terrain" style="left: 700px; top: 400px; width: 150px; height: 20px;"></div>
+        <div class="terrain" style="left: 950px; top: 300px; width: 150px; height: 20px;"></div>
+        <div class="terrain" style="left: 1200px; top: 400px; width: 200px; height: 20px;"></div>
+
+        <!-- Vitamins -->
+        <div class="vitamin" style="left: 250px; top: 360px;"></div>
+        <div class="vitamin" style="left: 500px; top: 260px;"></div>
+        <div class="vitamin" style="left: 1000px; top: 260px;"></div>
+        <div class="vitamin" style="left: 1250px; top: 360px;"></div>
+
+        <!-- Enemies -->
+        <div class="enemy-type1" style="left: 400px; top: 510px;"></div>
+        <div class="enemy-type1" style="left: 750px; top: 360px;"></div>
+        <div class="enemy-type2" style="left: 650px; top: 505px;"></div>
+        <div class="enemy-type2" style="left: 1050px; top: 255px;"></div>
+
+        <!-- Exit -->
+        <div class="exit" style="right: 50px; top: 470px;"></div>
+
+        <div id="message"></div>
+    </div>
+
+    <script>
+        const player = document.getElementById('player');
+        const lifeCountElement = document.getElementById('lifeCount');
+        const vitaminCountElement = document.getElementById('vitaminCount');
+        const playerStateElement = document.getElementById('playerState');
+        const messageElement = document.getElementById('message');
+
+        let playerX = 50;
+        let playerY = 500;
+        let velocityY = 0;
+        let velocityX = 0;
+        let isJumping = false;
+        let lives = 3;
+        let vitaminsCollected = 0;
+        let gameActive = true;
+
+        const gravity = 0.6;
+        const jumpPower = -12;
+        const moveSpeed = 4;
+        const runSpeed = 7;
+
+        const keys = {};
+
+        // Keyboard
+        document.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            if ((e.key === 'r' || e.key === 'R') && !gameActive) {
+                location.reload();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        // Collision check
+        function checkCollision(rect1, rect2) {
+            return rect1.left < rect2.right &&
+                   rect1.right > rect2.left &&
+                   rect1.top < rect2.bottom &&
+                   rect1.bottom > rect2.top;
+        }
+
+        function gameLoop() {
+            if (!gameActive) return;
+
+            let state = 'idle';
+            
+            // Horizontal movement
+            velocityX = 0;
+            if (keys['ArrowLeft']) {
+                velocityX = keys['Shift'] ? -runSpeed : -moveSpeed;
+                state = keys['Shift'] ? 'running' : 'walking';
+            }
+            if (keys['ArrowRight']) {
+                velocityX = keys['Shift'] ? runSpeed : moveSpeed;
+                state = keys['Shift'] ? 'running' : 'walking';
+            }
+
+            // Jump
+            if ((keys[' '] || keys['ArrowUp']) && !isJumping) {
+                velocityY = jumpPower;
+                isJumping = true;
+            }
+
+            if (isJumping) {
+                state = 'jumping';
+            }
+
+            // Apply gravity
+            velocityY += gravity;
+            
+            // Update position
+            playerX += velocityX;
+            playerY += velocityY;
+
+            // Check terrain collisions
+            const terrains = document.querySelectorAll('.terrain');
+            let onPlatform = false;
+
+            const playerRect = {
+                left: playerX,
+                right: playerX + 40,
+                top: playerY,
+                bottom: playerY + 40
+            };
+
+            terrains.forEach(terrain => {
+                const terrainRect = terrain.getBoundingClientRect();
+                const terrainBox = {
+                    left: terrainRect.left,
+                    right: terrainRect.right,
+                    top: terrainRect.top,
+                    bottom: terrainRect.bottom
+                };
+
+                // Landing on top of platform
+                if (velocityY >= 0 &&
+                    playerRect.right > terrainBox.left &&
+                    playerRect.left < terrainBox.right &&
+                    playerRect.bottom >= terrainBox.top &&
+                    playerRect.bottom <= terrainBox.top + velocityY + 5) {
+                    
+                    playerY = terrainBox.top - 40;
+                    velocityY = 0;
+                    isJumping = false;
+                    onPlatform = true;
+                }
+
+                // Hit platform from below
+                if (velocityY < 0 &&
+                    playerRect.right > terrainBox.left &&
+                    playerRect.left < terrainBox.right &&
+                    playerRect.top <= terrainBox.bottom &&
+                    playerRect.top >= terrainBox.bottom + velocityY) {
+                    
+                    velocityY = 0;
+                }
+            });
+
+            // Horizontal boundaries
+            if (playerX < 0) playerX = 0;
+            if (playerX > window.innerWidth - 40) playerX = window.innerWidth - 40;
+
+            // Fall off screen
+            if (playerY > window.innerHeight) {
+                lives--;
+                lifeCountElement.textContent = lives;
+                playerX = 50;
+                playerY = 500;
+                velocityY = 0;
+                isJumping = false;
+                
+                if (lives <= 0) {
+                    gameActive = false;
+                    messageElement.textContent = 'GAME OVER - Press R to Restart';
+                    messageElement.style.display = 'block';
+                }
+            }
+
+            // Vitamin collection
+            const vitamins = document.querySelectorAll('.vitamin');
+            vitamins.forEach(vitamin => {
+                const vitRect = vitamin.getBoundingClientRect();
+                if (checkCollision(playerRect, {
+                    left: vitRect.left,
+                    right: vitRect.right,
+                    top: vitRect.top,
+                    bottom: vitRect.bottom
+                })) {
+                    vitamin.remove();
+                    lives++;
+                    vitaminsCollected++;
+                    lifeCountElement.textContent = lives;
+                    vitaminCountElement.textContent = vitaminsCollected;
+                }
+            });
+
+            // Enemy collision
+            const enemies = document.querySelectorAll('.enemy-type1, .enemy-type2');
+            enemies.forEach(enemy => {
+                const enemyRect = enemy.getBoundingClientRect();
+                if (checkCollision(playerRect, {
+                    left: enemyRect.left,
+                    right: enemyRect.right,
+                    top: enemyRect.top,
+                    bottom: enemyRect.bottom
+                })) {
+                    enemy.remove();
+                    lives--;
+                    lifeCountElement.textContent = lives;
+                    
+                    if (lives <= 0) {
+                        gameActive = false;
+                        messageElement.textContent = 'GAME OVER - Press R to Restart';
+                        messageElement.style.display = 'block';
+                    }
+                }
+            });
+
+            // Exit
+            const exit = document.querySelector('.exit');
+            const exitRect = exit.getBoundingClientRect();
+            if (checkCollision(playerRect, {
+                left: exitRect.left,
+                right: exitRect.right,
+                top: exitRect.top,
+                bottom: exitRect.bottom
+            })) {
+                gameActive = false;
+                messageElement.textContent = 'VICTORY! - Press R to Play Again';
+                messageElement.style.display = 'block';
+            }
+
+            // Update display
+            player.style.left = playerX + 'px';
+            player.style.top = playerY + 'px';
+            player.className = state;
+            playerStateElement.textContent = state;
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start game
+        gameLoop();
+    </script>
+</body>
+</html>

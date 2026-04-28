@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<body style="margin:0;background:#000">
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+canvas.width = 800; canvas.height = 400;
+
+// --- WORLD ---
+const platforms = [
+  {x:0,   y:340, w:300, h:20, color:'#5a3e2b'},
+  {x:350, y:300, w:200, h:20, color:'#5a3e2b'},
+  {x:620, y:260, w:150, h:20, color:'#5a3e2b'},
+  {x:830, y:320, w:250, h:20, color:'#5a3e2b'},
+  {x:1150,y:280, w:200, h:20, color:'#5a3e2b'},
+];
+
+// --- PLAYER ---
+const player = {x:100, y:200, w:30, h:40, vx:0, vy:0, onGround:false};
+const GRAVITY=800, JUMP=-500, SPEED=200;
+
+// --- INPUT ---
+const keys = {};
+window.addEventListener('keydown', e=>keys[e.code]=true);
+window.addEventListener('keyup',   e=>keys[e.code]=false);
+
+// --- CAMERA ---
+let camX = 0;
+
+// --- PARALLAX LAYERS ---
+function drawBg(camX) {
+  // Sky gradient
+  const sky = ctx.createLinearGradient(0,0,0,400);
+  sky.addColorStop(0,'#1a1a2e'); sky.addColorStop(1,'#16213e');
+  ctx.fillStyle = sky; ctx.fillRect(0,0,800,400);
+
+  // Layer 0: stars (static)
+  ctx.fillStyle='#fff';
+  [[50,40],[120,80],[200,30],[400,60],[600,20],[700,90]].forEach(([x,y])=>{
+    ctx.fillRect(x,y,2,2);
+  });
+
+  // Layer 1: far mountains (parallax 0.15)
+  const m1x = -camX*0.15;
+  ctx.fillStyle='#2d3561';
+  [[m1x+50,180,120,160],[m1x+220,150,100,190],[m1x+400,170,140,170],
+   [m1x+600,140,110,200],[m1x+800,160,130,180]].forEach(([x,y,w,h])=>{
+    ctx.beginPath(); ctx.moveTo(x,400); ctx.lineTo(x+w/2,y);
+    ctx.lineTo(x+w,400); ctx.fill();
+  });
+
+  // Layer 2: mid hills (parallax 0.35)
+  const m2x = -camX*0.35;
+  ctx.fillStyle='#1f4068';
+  [[m2x,280,200,120],[m2x+180,260,180,140],[m2x+400,270,220,130],
+   [m2x+650,255,190,145],[m2x+900,268,210,132]].forEach(([x,y,w,h])=>{
+    ctx.beginPath(); ctx.moveTo(x,400); ctx.lineTo(x+w/2,y);
+    ctx.lineTo(x+w,400); ctx.fill();
+  });
+
+  // Layer 3: silhouette trees (parallax 0.55)
+  const tx = -camX*0.55;
+  ctx.fillStyle='#0d1b2a';
+  [tx+20,tx+90,tx+160,tx+320,tx+480,tx+560,tx+720,tx+860].forEach(x=>{
+    ctx.fillRect(x+8,310,4,50);
+    ctx.beginPath(); ctx.arc(x+10,305,14,0,Math.PI*2); ctx.fill();
+  });
+}
+
+// --- PHYSICS ---
+function update(dt) {
+  // Input
+  player.vx = 0;
+  if (keys['ArrowLeft']  || keys['KeyA']) player.vx = -SPEED;
+  if (keys['ArrowRight'] || keys['KeyD']) player.vx =  SPEED;
+  if ((keys['ArrowUp'] || keys['KeyW'] || keys['Space']) && player.onGround) {
+    player.vy = JUMP; player.onGround = false;
+  }
+
+  // Gravity
+  player.vy += GRAVITY * dt;
+
+  // Move
+  player.x += player.vx * dt;
+  player.y += player.vy * dt;
+  player.onGround = false;
+
+  // AABB Collision
+  for (const p of platforms) {
+    const overX = player.x + player.w > p.x && player.x < p.x + p.w;
+    const overY = player.y + player.h > p.y && player.y < p.y + p.h;
+    if (overX && overY) {
+      // Resolve from bottom (landing)
+      if (player.vy > 0 && player.y + player.h - player.vy*dt <= p.y + 2) {
+        player.y = p.y - player.h;
+        player.vy = 0; player.onGround = true;
+      }
+    }
+  }
+
+  // World floor
+  if (player.y + player.h > 400) { player.y = 400 - player.h; player.vy = 0; player.onGround = true; }
+
+  // Camera follow (lerped)
+  const targetCam = player.x - 300;
+  camX += (targetCam - camX) * 0.08;
+  camX = Math.max(0, camX);
+}
+
+// --- RENDER ---
+function render() {
+  drawBg(camX);
+
+  ctx.save();
+  ctx.translate(-camX, 0);
+
+  // Platforms with fake 3D depth
+  for (const p of platforms) {
+    ctx.fillStyle='#3d2b1f';
+    ctx.fillRect(p.x, p.y+8, p.w, p.h); // shadow/depth face
+    ctx.fillStyle=p.color;
+    ctx.fillRect(p.x, p.y, p.w, p.h);
+    ctx.fillStyle='#7a5c3d';
+    ctx.fillRect(p.x, p.y, p.w, 4);     // highlight top
+  }
+
+  // Player with fake 3D shadow
+  ctx.fillStyle='rgba(0,0,0,0.3)';
+  ctx.beginPath(); ctx.ellipse(player.x+player.w/2, player.y+player.h+4, 18, 6, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = player.onGround ? '#e94560' : '#ff6b6b';
+  ctx.fillRect(player.x, player.y, player.w, player.h);
+  // Eyes
+  ctx.fillStyle='#fff';
+  ctx.fillRect(player.x+8, player.y+10, 6, 6);
+  ctx.fillRect(player.x+18, player.y+10, 6, 6);
+  ctx.fillStyle='#000';
+  ctx.fillRect(player.x+10, player.y+12, 3, 3);
+  ctx.fillRect(player.x+20, player.y+12, 3, 3);
+
+  ctx.restore();
+
+  // HUD
+  ctx.fillStyle='rgba(255,255,255,0.6)';
+  ctx.font='13px monospace';
+  ctx.fillText('← → to move  |  ↑ / Space to jump', 16, 24);
+}
+
+// --- GAME LOOP ---
+let last = 0;
+function loop(ts) {
+  const dt = Math.min((ts - last) / 1000, 0.05);
+  last = ts;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
